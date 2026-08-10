@@ -7,15 +7,14 @@ import com.pvmgroupfinder.model.ChatMessage;
 import com.pvmgroupfinder.model.GroupListing;
 import com.pvmgroupfinder.model.JoinRequest;
 import java.awt.Color;
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.TrayIcon;
 import java.awt.image.BufferedImage;
-import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -24,15 +23,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.imageio.ImageIO;
 import javax.inject.Inject;
-import javax.sound.sampled.AudioInputStream;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.Clip;
-import javax.sound.sampled.LineEvent;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.client.audio.AudioPlayer;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.FlashNotification;
 import net.runelite.client.config.Notification;
@@ -79,6 +75,7 @@ public class PvmGroupFinderPlugin extends Plugin
     @Inject private GroupFinderClient api;
     @Inject private Notifier notifier;
     @Inject private WorldService worldService;
+    @Inject private AudioPlayer audioPlayer;
 
     private PvmGroupFinderPanel panel;
     private NavigationButton navigationButton;
@@ -445,7 +442,7 @@ public class PvmGroupFinderPlugin extends Plugin
             }
             if (config.joinRequestSound())
             {
-                newRequests.forEach(request -> CompletableFuture.runAsync(PvmGroupFinderPlugin::playJoinSound));
+                newRequests.forEach(request -> CompletableFuture.runAsync(this::playJoinSound));
             }
             if (config.autoOpenRequests())
             {
@@ -460,21 +457,11 @@ public class PvmGroupFinderPlugin extends Plugin
         });
     }
 
-    private static void playJoinSound()
+    private void playJoinSound()
     {
-        try (InputStream resource = PvmGroupFinderPlugin.class.getResourceAsStream("/raidmates-join.wav"))
+        try
         {
-            if (resource == null) return;
-            try (AudioInputStream audio = AudioSystem.getAudioInputStream(new BufferedInputStream(resource)))
-            {
-                Clip clip = AudioSystem.getClip();
-                clip.addLineListener(event ->
-                {
-                    if (event.getType() == LineEvent.Type.STOP) clip.close();
-                });
-                clip.open(audio);
-                clip.start();
-            }
+            audioPlayer.play(PvmGroupFinderPlugin.class, "/raidmates-join.wav", 0f);
         }
         catch (Exception error)
         {
