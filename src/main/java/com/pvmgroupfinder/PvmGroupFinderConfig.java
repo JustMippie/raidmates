@@ -15,7 +15,10 @@ public interface PvmGroupFinderConfig extends Config
         description = "Connect to the external RaidMates server. Sends a random installation ID, "
             + "your locally observed character name, manually submitted listings and join requests, "
             + "group state, lobby chat, reports, and technical connection data. "
-            + "Privacy: https://api.raidmates.nl/privacy"
+            + "Privacy: https://api.raidmates.nl/privacy",
+        warning = "RaidMates connects to an external third-party server and sends a random installation ID, "
+            + "your locally observed character name, submitted group data, lobby chat, reports, "
+            + "and technical connection data. RaidMates is not operated by RuneLite or Jagex."
     )
     default boolean onlineEnabled()
     {
