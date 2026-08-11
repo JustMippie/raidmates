@@ -64,9 +64,4 @@ public interface PvmGroupFinderConfig extends Config
     {
         return true;
     }
-
-    default String apiUrl()
-    {
-        return "https://api.raidmates.nl";
-    }
 }

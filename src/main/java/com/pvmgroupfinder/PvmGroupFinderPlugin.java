@@ -35,6 +35,7 @@ import net.runelite.client.config.Notification;
 import net.runelite.client.config.NotificationSound;
 import net.runelite.client.config.RequestFocusType;
 import net.runelite.client.Notifier;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.WorldService;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -52,6 +53,7 @@ import net.runelite.client.ui.NavigationButton;
 )
 public class PvmGroupFinderPlugin extends Plugin
 {
+    private static final String API_URL = "https://api.raidmates.nl";
     private static final String INSTALLATION_ID = "installationId";
     private static final String INSTALLATION_SECRET = "installationSecret";
     private static final Notification JOIN_NOTIFICATION = Notification.ON
@@ -74,6 +76,7 @@ public class PvmGroupFinderPlugin extends Plugin
     @Inject private PvmGroupFinderConfig config;
     @Inject private GroupFinderClient api;
     @Inject private Notifier notifier;
+    @Inject private ItemManager itemManager;
     @Inject private WorldService worldService;
     @Inject private AudioPlayer audioPlayer;
 
@@ -104,7 +107,7 @@ public class PvmGroupFinderPlugin extends Plugin
     {
         installationId = loadInstallationId();
         installationSecret = loadInstallationSecret();
-        api.configure(config.apiUrl());
+        api.configure(API_URL);
         SwingUtilities.invokeLater(() ->
         {
             panel = new PvmGroupFinderPanel(
@@ -121,7 +124,8 @@ public class PvmGroupFinderPlugin extends Plugin
                 this::sendChatMessage,
                 this::refreshChat,
                 this::reportChatMessage,
-                this::availableWorlds);
+                this::availableWorlds,
+                itemManager);
             navigationButton = NavigationButton.builder()
                 .tooltip("RaidMates")
                 .icon(createIcon())
@@ -165,7 +169,7 @@ public class PvmGroupFinderPlugin extends Plugin
         api.cancelAll();
         sessionOpening = false;
         sessionRsn = null;
-        api.configure(config.apiUrl());
+        api.configure(API_URL);
         SwingUtilities.invokeLater(this::connect);
     }
 

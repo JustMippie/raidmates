@@ -47,6 +47,10 @@ public class GroupFinderClient
 
     public void configure(String baseUrl)
     {
+        if (baseUrl == null || baseUrl.trim().isEmpty())
+        {
+            throw new IllegalArgumentException("RaidMates API URL must not be empty");
+        }
         this.baseUrl = baseUrl.replaceAll("/+$", "");
     }
 

@@ -7,12 +7,15 @@ import com.pvmgroupfinder.model.GroupMember;
 import com.pvmgroupfinder.model.JoinRequest;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import javax.swing.BorderFactory;
@@ -21,8 +24,10 @@ import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -30,8 +35,12 @@ import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import net.runelite.api.ItemID;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.util.AsyncBufferedImage;
 
 public class PvmGroupFinderPanel extends PluginPanel
 {
@@ -63,6 +72,8 @@ public class PvmGroupFinderPanel extends PluginPanel
     private final Runnable refreshChatAction;
     private final ReportChatAction reportChatAction;
     private final Supplier<List<Integer>> worldSupplier;
+    private final ItemManager itemManager;
+    private final Map<Integer, ImageIcon> activityIcons = new HashMap<>();
     private final JPanel chatMessages = new JPanel();
     private final JTextField chatInput = new JTextField();
     private final Timer chatTimer;
@@ -88,7 +99,8 @@ public class PvmGroupFinderPanel extends PluginPanel
                                Consumer<String> sendChatAction,
                                Runnable refreshChatAction,
                                ReportChatAction reportChatAction,
-                               Supplier<List<Integer>> worldSupplier)
+                               Supplier<List<Integer>> worldSupplier,
+                               ItemManager itemManager)
     {
         this.refreshAction = refreshAction;
         this.createAction = createAction;
@@ -104,6 +116,7 @@ public class PvmGroupFinderPanel extends PluginPanel
         this.refreshChatAction = refreshChatAction;
         this.reportChatAction = reportChatAction;
         this.worldSupplier = worldSupplier;
+        this.itemManager = itemManager;
         this.chatTimer = new Timer(3000, e -> this.refreshChatAction.run());
         this.chatPanel = buildChatPanel();
         setLayout(new BorderLayout());
@@ -117,6 +130,7 @@ public class PvmGroupFinderPanel extends PluginPanel
         listings.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
         listingsScroll.setBorder(BorderFactory.createEmptyBorder());
         listingsScroll.getViewport().setBackground(BACKGROUND);
+        configureActivityCombo(filter);
         showListings(java.util.Collections.emptyList());
     }
 
@@ -193,6 +207,7 @@ public class PvmGroupFinderPanel extends PluginPanel
     private void showCreateDialog()
     {
         JComboBox<ActivityOption> activity = new JComboBox<>(ActivityOption.withoutAll());
+        configureActivityCombo(activity);
         JSpinner teamSize = new JSpinner(new SpinnerNumberModel(4, 2, 100, 1));
         JLabel teamSizeLabel = new JLabel("Team size");
         JSpinner kc = new JSpinner(new SpinnerNumberModel(0, 0, 1_000_000, 1));
@@ -312,6 +327,9 @@ public class PvmGroupFinderPanel extends PluginPanel
         styleCard(card);
         card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 150));
         JLabel heading = new JLabel(listing.getActivity() + " — " + listing.getHostRsn());
+        heading.setText(activityLabel(listing.getActivity())
+            + heading.getText().substring(listing.getActivity().length()));
+        addActivityIcon(heading, listing.getActivity());
         heading.setForeground(BRAND_GOLD);
         heading.setFont(heading.getFont().deriveFont(Font.BOLD));
         JLabel details = new JLabel(listing.getCurrentSize() + "/" + listing.getTeamSize()
@@ -426,6 +444,9 @@ public class PvmGroupFinderPanel extends PluginPanel
             styleCard(card);
             card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 280));
             JLabel title = new JLabel(group.getActivity() + " — " + group.getCurrentSize() + "/" + group.getTeamSize());
+            title.setText(activityLabel(group.getActivity())
+                + title.getText().substring(group.getActivity().length()));
+            addActivityIcon(title, group.getActivity());
             title.setForeground(BRAND_GOLD);
             title.setFont(title.getFont().deriveFont(Font.BOLD));
             card.add(title);
@@ -660,46 +681,123 @@ public class PvmGroupFinderPanel extends PluginPanel
             BorderFactory.createEmptyBorder(4, 8, 4, 8)));
     }
 
+    private void configureActivityCombo(JComboBox<ActivityOption> comboBox)
+    {
+        comboBox.setRenderer(new DefaultListCellRenderer()
+        {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                           boolean isSelected, boolean cellHasFocus)
+            {
+                JLabel label = (JLabel) super.getListCellRendererComponent(
+                    list, value, index, isSelected, cellHasFocus);
+                ActivityOption activity = value instanceof ActivityOption ? (ActivityOption) value : null;
+                label.setText(activity == null ? "" : activity.label);
+                label.setIcon(getActivityIcon(activity));
+                label.setIconTextGap(7);
+                return label;
+            }
+        });
+    }
+
+    private ImageIcon getActivityIcon(ActivityOption activity)
+    {
+        if (activity == null || activity.iconItemId < 0)
+        {
+            return null;
+        }
+
+        return activityIcons.computeIfAbsent(activity.iconItemId, itemId ->
+        {
+            AsyncBufferedImage image = itemManager.getImage(itemId);
+            image.onLoaded(() -> SwingUtilities.invokeLater(this::repaint));
+            return new ImageIcon(image);
+        });
+    }
+
+    private void addActivityIcon(JLabel label, String activityId)
+    {
+        ActivityOption activity = ActivityOption.findById(activityId);
+        if (activity == null || activity.iconItemId < 0)
+        {
+            return;
+        }
+
+        itemManager.getImage(activity.iconItemId).addTo(label);
+        label.setIconTextGap(7);
+    }
+
+    private static String activityLabel(String activityId)
+    {
+        ActivityOption activity = ActivityOption.findById(activityId);
+        return activity == null ? activityId : activity.label;
+    }
+
     private enum ActivityOption
     {
-        ALL("ALL", "All activities"),
-        COX("COX", "Chambers of Xeric"), TOB("TOB", "Theatre of Blood"),
-        TOA("TOA", "Tombs of Amascut"), NEX("NEX", "Nex"),
-        NIGHTMARE("NIGHTMARE", "The Nightmare"), YAMA("YAMA", "Yama", 2),
-        HUEYCOATL("HUEYCOATL", "The Hueycoatl"),
-        ROYAL_TITANS("ROYAL_TITANS", "Royal Titans", 2),
-        CORPOREAL_BEAST("CORPOREAL_BEAST", "Corporeal Beast"),
-        GENERAL_GRAARDOR("GENERAL_GRAARDOR", "General Graardor"),
-        KREEARRA("KREEARRA", "Kree'arra"),
-        KRIL_TSUTSAROTH("KRIL_TSUTSAROTH", "K'ril Tsutsaroth"),
-        COMMANDER_ZILYANA("COMMANDER_ZILYANA", "Commander Zilyana"),
-        DAGANNOTH_KINGS("DAGANNOTH_KINGS", "Dagannoth Kings"),
-        SCURRIUS("SCURRIUS", "Scurrius"), GIANT_MOLE("GIANT_MOLE", "Giant Mole"),
-        KALPHITE_QUEEN("KALPHITE_QUEEN", "Kalphite Queen"),
-        SARACHNIS("SARACHNIS", "Sarachnis"), GEMSTONE_CRAB("GEMSTONE_CRAB", "Gemstone Crab"),
-        CALLISTO("CALLISTO", "[Wilderness] Callisto", true),
-        VENENATIS("VENENATIS", "[Wilderness] Venenatis", true),
-        VETION("VETION", "[Wilderness] Vet'ion", true),
-        CHAOS_ELEMENTAL("CHAOS_ELEMENTAL", "[Wilderness] Chaos Elemental", true),
-        KING_BLACK_DRAGON("KING_BLACK_DRAGON", "[Wilderness travel] King Black Dragon", true),
-        SCORPIA("SCORPIA", "[Wilderness] Scorpia", true),
-        REVENANT_MALEDICTUS("REVENANT_MALEDICTUS", "[Wilderness] Revenant maledictus", true);
+        ALL("ALL", "All activities", -1),
+        COX("COX", "Chambers of Xeric", ItemID.TWISTED_BOW),
+        TOB("TOB", "Theatre of Blood", ItemID.SCYTHE_OF_VITUR),
+        TOA("TOA", "Tombs of Amascut", ItemID.TUMEKENS_SHADOW),
+        NEX("NEX", "Nex", ItemID.NEXLING),
+        NIGHTMARE("NIGHTMARE", "The Nightmare", ItemID.LITTLE_NIGHTMARE),
+        YAMA("YAMA", "Yama", ItemID.DOM, 2),
+        HUEYCOATL("HUEYCOATL", "The Hueycoatl", ItemID.HUBERTE),
+        ROYAL_TITANS("ROYAL_TITANS", "Royal Titans", ItemID.BRAN, 2),
+        CORPOREAL_BEAST("CORPOREAL_BEAST", "Corporeal Beast", ItemID.PET_DARK_CORE),
+        GENERAL_GRAARDOR("GENERAL_GRAARDOR", "General Graardor", ItemID.PET_GENERAL_GRAARDOR),
+        KREEARRA("KREEARRA", "Kree'arra", ItemID.PET_KREEARRA),
+        KRIL_TSUTSAROTH("KRIL_TSUTSAROTH", "K'ril Tsutsaroth", ItemID.PET_KRIL_TSUTSAROTH),
+        COMMANDER_ZILYANA("COMMANDER_ZILYANA", "Commander Zilyana", ItemID.PET_ZILYANA),
+        DAGANNOTH_KINGS("DAGANNOTH_KINGS", "Dagannoth Kings", ItemID.PET_DAGANNOTH_PRIME),
+        SCURRIUS("SCURRIUS", "Scurrius", ItemID.SCURRY),
+        GIANT_MOLE("GIANT_MOLE", "Giant Mole", ItemID.BABY_MOLE),
+        KALPHITE_QUEEN("KALPHITE_QUEEN", "Kalphite Queen", ItemID.KALPHITE_PRINCESS),
+        SARACHNIS("SARACHNIS", "Sarachnis", ItemID.SRARACHA),
+        GEMSTONE_CRAB("GEMSTONE_CRAB", "Gemstone Crab", ItemID.RAINBOW_CRAB),
+        CALLISTO("CALLISTO", "[Wilderness] Callisto", ItemID.CALLISTO_CUB, true),
+        VENENATIS("VENENATIS", "[Wilderness] Venenatis", ItemID.VENENATIS_SPIDERLING, true),
+        VETION("VETION", "[Wilderness] Vet'ion", ItemID.VETION_JR, true),
+        CHAOS_ELEMENTAL("CHAOS_ELEMENTAL", "[Wilderness] Chaos Elemental", ItemID.PET_CHAOS_ELEMENTAL, true),
+        KING_BLACK_DRAGON("KING_BLACK_DRAGON", "[Wilderness travel] King Black Dragon", ItemID.PRINCE_BLACK_DRAGON, true),
+        SCORPIA("SCORPIA", "[Wilderness] Scorpia", ItemID.SCORPIAS_OFFSPRING, true),
+        REVENANT_MALEDICTUS("REVENANT_MALEDICTUS", "[Wilderness] Revenant maledictus", ItemID.CRAWS_BOW, true);
 
         private final String id;
         private final String label;
+        private final int iconItemId;
         private final boolean wilderness;
         private final int maxTeamSize;
-        ActivityOption(String id, String label) { this(id, label, false, 100); }
-        ActivityOption(String id, String label, boolean wilderness) { this(id, label, wilderness, 100); }
-        ActivityOption(String id, String label, int maxTeamSize) { this(id, label, false, maxTeamSize); }
-        ActivityOption(String id, String label, boolean wilderness, int maxTeamSize)
+        ActivityOption(String id, String label, int iconItemId)
+        {
+            this(id, label, iconItemId, false, 100);
+        }
+        ActivityOption(String id, String label, int iconItemId, boolean wilderness)
+        {
+            this(id, label, iconItemId, wilderness, 100);
+        }
+        ActivityOption(String id, String label, int iconItemId, int maxTeamSize)
+        {
+            this(id, label, iconItemId, false, maxTeamSize);
+        }
+        ActivityOption(String id, String label, int iconItemId, boolean wilderness, int maxTeamSize)
         {
             this.id = id;
             this.label = label;
+            this.iconItemId = iconItemId;
             this.wilderness = wilderness;
             this.maxTeamSize = maxTeamSize;
         }
         @Override public String toString() { return label; }
+        static ActivityOption findById(String id)
+        {
+            if (id == null) return null;
+            for (ActivityOption activity : values())
+            {
+                if (activity.id.equalsIgnoreCase(id)) return activity;
+            }
+            return null;
+        }
         static ActivityOption[] withoutAll()
         {
             ActivityOption[] values = values();
